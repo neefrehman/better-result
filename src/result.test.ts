@@ -2071,6 +2071,52 @@ describe("Type Inference", () => {
     });
   });
 
+  describe("instance methods with explicit type parameter (TS2684 regression)", () => {
+    // Regression in v2.9.0: calling .match<T>({...}) or .map<T>() with an explicit
+    // type parameter produces TS2684 on Result (the Ok | Err union).
+    // This worked in v2.8.2.
+    //
+    // Root cause: the `this: R` constraint added in PR #68. When an explicit type
+    // parameter is provided, TypeScript no longer infers R from the `this` context
+    // via the default. The constraint check then fails because Result (Ok | Err) as
+    // a union doesn't satisfy Ok's structural requirements (missing `value` property).
+
+    it("allows explicit type parameter on .match<T>() called on Result", () => {
+      type Metadata = { title?: string; description?: string | null };
+
+      const getResult = (): Result<{ name: string; summary?: string | null }, ErrorA> =>
+        Result.ok({ name: "Test", summary: null });
+      const result = getResult();
+
+      // Without explicit type param — this works fine in v2.9.0
+      result.match({
+        ok: (value) => ({ title: value.name }),
+        err: () => ({}),
+      });
+
+      // With explicit type param — TS2684 in v2.9.0:
+      // "The 'this' context of type 'Result<..., ErrorA>' is not assignable to
+      //  method's 'this' of type 'Ok<..., ErrorA>'.
+      //  Property 'value' is missing in type 'Err<..., ErrorA>'"
+      result.match<Metadata>({
+        ok: (value) => ({ title: value.name, description: value.summary }),
+        err: () => ({}),
+      });
+    });
+
+    it("allows explicit type parameter on .map<T>() called on Result", () => {
+      const getResult = (): Result<{ id: string; name: string }, ErrorA> =>
+        Result.ok({ id: "1", name: "Test" });
+      const result = getResult();
+
+      // Without explicit type param — works fine
+      result.map((value) => value.name);
+
+      // With explicit type param — TS2684 in v2.9.0
+      result.map<string>((value) => value.name);
+    });
+  });
+
   describe("mapError on union", () => {
     it("transforms union error type to single type", () => {
       // Start with union error type
